@@ -1,0 +1,72 @@
+/* The arrows hang in the margin, left of the text, and take no room in the
+   line: the heading has to sit exactly where it sat before the plugin was
+   installed. Obsidian's own fold indicator lives in that margin too, roughly
+   22px wide against the text, so the column starts clear of it. Both only show
+   on hover, so if a theme puts the fold indicator further out and the two meet,
+   this offset is the number to raise. */
+.heading-reorder-line {
+  position: relative;
+}
+
+.heading-reorder-arrows {
+  --heading-reorder-offset: 40px;
+  --heading-reorder-width: 14px;
+  position: absolute;
+  left: calc(-1 * var(--heading-reorder-offset));
+  top: 0;
+  height: 100%;
+  width: var(--heading-reorder-width);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 100ms ease;
+  /* the line is a heading, and everything in it is big and bold. This is a
+     control sitting in that line, not part of the heading. */
+  font-size: var(--font-ui-smaller);
+  font-weight: normal;
+  line-height: 1;
+  user-select: none;
+}
+
+.cm-line.heading-reorder-line:hover > .heading-reorder-arrows,
+body.heading-reorder-always .heading-reorder-arrows {
+  opacity: 0.45;
+}
+
+body.heading-reorder-always .cm-line.heading-reorder-line:hover > .heading-reorder-arrows {
+  opacity: 1;
+}
+
+.heading-reorder-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 11px;
+  color: var(--text-muted);
+  cursor: var(--cursor, pointer);
+}
+
+.heading-reorder-arrow .svg-icon {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2.5;
+}
+
+.heading-reorder-arrow:hover {
+  color: var(--text-accent);
+}
+
+/* A heading at the top or the bottom of its parent still shows both arrows, so
+   the column does not shift under the pointer between one heading and the next.
+   The one that would do nothing says so by looking spent. */
+.heading-reorder-arrow.is-disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.heading-reorder-arrow.is-disabled:hover {
+  color: var(--text-muted);
+}

@@ -1,0 +1,10 @@
+{
+  "id": "heading-reorder",
+  "name": "Heading Reorder",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Arrows beside a heading swap it, and everything under it, with the heading before or after it.",
+  "author": "Lucas Aguilar",
+  "authorUrl": "https://github.com/oLucasAguilar",
+  "isDesktopOnly": false
+}

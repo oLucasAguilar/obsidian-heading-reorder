@@ -152,6 +152,24 @@ check('going down, the caret follows the heading', moved(note, 2, 1), '## Bread'
 check('going up, it follows it there too', moved(note, 8, -1), '## Cake');
 check('a section with children lands on its own heading', moved(note, 2, 1), '## Bread');
 
+/* The line number was always right; the offset was read off the old text, where
+ * the same line number sits somewhere else once the sections have swapped. */
+const caretLine = (text, line, dir) => {
+  const { lines, headings } = read(text);
+  const out = t.swapSections(lines, headings, t.headingIndexAt(headings, line + 1), dir);
+  const after = lines.slice(0, out.from).concat(out.lines, lines.slice(out.to)).join('\n');
+  let from = 0;
+  for (let i = 0; i < out.from; i++) from += lines[i].length + 1;
+  return after.slice(from + out.movedOffset).split('\n')[0];
+};
+check('the caret offset points at the heading, not near it', caretLine(note, 2, 1), '## Bread');
+check('going up the offset points at it too', caretLine(note, 8, -1), '## Cake');
+
+const uneven = '## A\nthis line is a good deal longer than the other one\n## B\nb';
+check('sections of different lengths do not throw the caret a line off',
+  caretLine(uneven, 0, 1), '## A');
+check('and the same the other way round', caretLine(uneven, 2, -1), '## B');
+
 /* ---- folds follow the lines they were on ---- */
 const swapOf = (text, line, dir) => {
   const { lines, headings } = read(text);

@@ -96,13 +96,22 @@ function swapSections(lines, headings, index, dir) {
     .concat(seq(start, aboveBody))              // the section going down
     .concat(seq(belowBody, end));               // whatever ended the range
 
+  const movedAt = order.indexOf(headings[index].line);
+  /* The offset of that heading inside the text being written, not inside the
+   * text being replaced. A dispatch resolves its selection against the new
+   * document, and the two sections rarely have the same lengths, so the old
+   * offset of the same line number lands somewhere else, usually a line down. */
+  let movedOffset = 0;
+  for (let i = 0; i < movedAt; i++) movedOffset += lines[order[i]].length + 1;
+
   return {
     from: start,
     to: end,
     order,
     lines: order.map((line) => lines[line]),
     // where the heading that was asked to move ended up, so the caret can follow
-    movedLine: start + order.indexOf(headings[index].line),
+    movedLine: start + movedAt,
+    movedOffset,
   };
 }
 
@@ -204,7 +213,7 @@ function moveSection(view, lineNumber, dir) {
   const spec = { changes: { from, to, insert: swap.lines.join('\n') } };
   /* Only when the caret was in what moved. Left alone it would be remapped to
    * the same offset, which after the swap is the middle of the other section. */
-  if (inside) spec.selection = { anchor: doc.line(swap.movedLine + 1).from };
+  if (inside) spec.selection = { anchor: from + swap.movedOffset };
   view.dispatch(spec);
 
   if (wanted.length) refold(view, swap, wanted);

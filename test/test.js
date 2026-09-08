@@ -198,6 +198,154 @@ const up = swapOf(note, 8, -1);
 check('going up moves them the same way',
   t.movedFoldLines(up, [9]).concat(t.movedFoldLines(up, [3])), [3, 6]);
 
+/* ---- bullets: the same move, one indent instead of one level ---- */
+const list = [
+  '- flour',        // 0
+  '  - white',      // 1
+  '  - rye',        // 2
+  '- water',        // 3
+  '  - filtered',   // 4
+  '- salt',         // 5
+].join('\n');
+
+const parsedList = t.parseList(list);
+check('every bullet is found', parsedList.items.map((i) => i.line), [0, 1, 2, 3, 4, 5]);
+check('the indent is how deep it sits', parsedList.items.map((i) => i.indent), [0, 2, 2, 0, 2, 0]);
+check('a tab counts to the next stop of four', t.indentWidth('\t- a'), 4);
+check('a dash with no space is not a bullet', t.parseList('-dash').items.length, 0);
+check('a numbered item is one too', t.parseList('1. one\n2) two').items.length, 2);
+
+const fenced = ['- one', '  ```', '  - not a bullet', '  ```', '- two'].join('\n');
+check('a dash inside a fence is not a bullet', t.parseList(fenced).items.map((i) => i.line), [0, 4]);
+
+/* ---- how far a bullet reaches ---- */
+const endOf = (text, index) => {
+  const { lines, items, fenced: inFence } = t.parseList(text);
+  return t.itemEnd(lines, inFence, items, index);
+};
+check('a bullet ends at the next one of its indent', endOf(list, 0), 3);
+check('and keeps what is indented under it', endOf(list, 3), 5);
+check('a child ends where the next child starts', endOf(list, 1), 2);
+check('the last bullet runs to the end of the note', endOf(list, 5), 6);
+check('a line of plain text under a bullet belongs to it',
+  endOf('- one\n  still one\n- two', 0), 2);
+check('a fenced block under a bullet travels with it', endOf(fenced, 0), 4);
+check('a blank line between two bullets does not end the first',
+  endOf('- one\n\n- two', 0), 2);
+check('text back at column zero ends it', endOf('- one\nloose text\n- two', 0), 1);
+check('so does a heading', endOf('- one\n## Bread\n- two', 0), 1);
+
+/* ---- who a bullet may swap with ---- */
+const siblingOf = (text, index, dir) => {
+  const { lines, items, fenced: inFence } = t.parseList(text);
+  return t.itemSibling(lines, inFence, items, index, dir);
+};
+check('the next bullet at the same indent', siblingOf(list, 0, 1), 3);
+check('children in between are skipped', siblingOf(list, 3, -1), 0);
+check('the first child has nothing above it', siblingOf(list, 1, -1), null);
+check('nor does a child reach past its parent', siblingOf(list, 2, 1), null);
+check('the last bullet has nothing below it', siblingOf(list, 5, 1), null);
+check('a blank line between them does not separate them',
+  siblingOf('- one\n\n- two', 0, 1), 1);
+/* Two lists, not one list with a paragraph in it. Swapping across that would
+ * carry the paragraph into the middle of a bullet. */
+check('text at column zero makes them two different lists',
+  siblingOf('- one\nloose text\n- two', 0, 1), null);
+check('and the same read from below', siblingOf('- one\nloose text\n- two', 1, -1), null);
+
+/* ---- which bullet the key answers from ---- */
+const itemAtLine = (text, line) => {
+  const { lines, items, fenced: inFence } = t.parseList(text);
+  return t.itemAt(lines, inFence, items, line + 1);
+};
+check('a bullet answers from its own line', itemAtLine(list, 3), 3);
+check('the innermost one answers when they are nested', itemAtLine(list, 4), 4);
+check('a continuation line answers for the bullet it belongs to',
+  itemAtLine('- one\n  still one\n- two', 1), 0);
+check('a blank line answers for nothing', itemAtLine('- one\n\n- two', 1), -1);
+check('a line that is no list at all answers for nothing',
+  itemAtLine('# Bread\n\n- one', 0), -1);
+
+/* ---- the swap ---- */
+const swapItem = (text, line, dir) => {
+  const { lines, items, fenced: inFence } = t.parseList(text);
+  const index = t.itemAt(lines, inFence, items, line + 1);
+  if (index === -1) return null;
+  const out = t.swapItems(lines, inFence, items, index, dir);
+  if (!out) return null;
+  return lines.slice(0, out.from).concat(out.lines, lines.slice(out.to)).join('\n');
+};
+
+check('a bullet takes what is under it with it', swapItem(list, 0, 1), [
+  '- water', '  - filtered',
+  '- flour', '  - white', '  - rye',
+  '- salt',
+].join('\n'));
+check('up and down are the same move from either end',
+  swapItem(list, 3, -1), swapItem(list, 0, 1));
+check('a child swaps with its own sibling and leaves the rest alone',
+  swapItem(list, 1, 1),
+  ['- flour', '  - rye', '  - white', '- water', '  - filtered', '- salt'].join('\n'));
+check('the move is asked for from inside the bullet too',
+  swapItem(list, 4, -1), null);
+check('a bullet with no sibling that way does not move', swapItem(list, 5, 1), null);
+check('a continuation line travels with its bullet',
+  swapItem('- one\n  still one\n- two', 0, 1), '- two\n- one\n  still one');
+check('the blank line stays between them, not with the bullet',
+  swapItem('- one\n\n- two', 0, 1), '- two\n\n- one');
+
+/* A numbered list reads as its own order, so the numbers stay put and only
+ * what is written under them changes place. */
+check('the numbers stay where they were',
+  swapItem('1. one\n2. two', 0, 1), '1. two\n2. one');
+check('and so do their children',
+  swapItem('1. one\n   - a\n2. two', 0, 1), '1. two\n2. one\n   - a');
+check('a list numbered all ones stays that way',
+  swapItem('1. one\n1. two', 0, 1), '1. two\n1. one');
+check('a dash next to a number is left alone',
+  swapItem('- one\n1. two', 0, 1), '1. two\n- one');
+
+/* ---- where the caret lands ---- */
+const caretIn = (text, line, column, dir) => {
+  const { lines, items, fenced: inFence } = t.parseList(text);
+  const index = t.itemAt(lines, inFence, items, line + 1);
+  const out = t.swapItems(lines, inFence, items, index, dir);
+  const moves = t.movedLines(out);
+  const after = lines.slice(0, out.from).concat(out.lines, lines.slice(out.to)).join('\n');
+  let from = 0;
+  for (let i = 0; i < out.from; i++) from += lines[i].length + 1;
+  const offset = t.caretOffset(out, moves.get(line), column);
+  return after.slice(from + offset).split('\n')[0];
+};
+check('the caret keeps the line it was on', caretIn(list, 0, 0, 1), '- flour');
+check('and follows a continuation line rather than the bullet',
+  caretIn('- one\n  still one\n- two', 1, 0, 1), '  still one');
+check('a column past the end of the line is clamped to it',
+  t.caretOffset({ from: 0, lines: ['- ab', '- c'] }, 1, 99), 8);
+/* The line number was always right; an offset read off the old text lands
+ * elsewhere once two bullets of different lengths have swapped. */
+check('bullets of different lengths do not throw the caret a line off',
+  caretIn('- a much longer bullet than the other one\n- b', 0, 0, 1),
+  '- a much longer bullet than the other one');
+check('and the column it was at is kept',
+  caretIn('- a much longer bullet than the other one\n- b', 0, 2, 1),
+  'a much longer bullet than the other one');
+
+/* ---- folds follow the bullets they were on ---- */
+const itemSwapOf = (text, line, dir) => {
+  const { lines, items, fenced: inFence } = t.parseList(text);
+  return t.swapItems(lines, inFence, items, t.itemAt(lines, inFence, items, line + 1), dir);
+};
+const downList = itemSwapOf(list, 0, 1); // flour, with its children, goes under water
+check('no line is lost and none is invented',
+  downList.order.slice().sort((a, b) => a - b), [0, 1, 2, 3, 4]);
+check('a collapsed bullet is collapsed again where it landed',
+  t.movedFoldLines(downList, [1]), [3]); // '- flour' on line 1 lands on line 3
+check('the bullet that came up is folded at its new line',
+  t.movedFoldLines(downList, [4]), [1]); // '- water' comes up to the top
+check('a fold outside the two bullets is left alone',
+  t.movedFoldLines(downList, [6]), []);
+
 /* ---- what the editor is asked to do ---- */
 check('the swap is one rewrite of the lines the two cover',
   /changes:\s*{\s*from,\s*to,\s*insert:/.test(source), true);

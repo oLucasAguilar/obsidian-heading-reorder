@@ -12,14 +12,14 @@ const PLAN = '## Soup\n\nLeeks and potatoes.\n\n## Bread\n\n- Flour\n\t- 500 g, 
     const a = [...line.querySelectorAll('.heading-reorder-arrow')].map(x => x.getBoundingClientRect()).filter(r => r.width > 0)[0];
     return { x: a.x + a.width / 2, y: a.y + a.height / 2 }; });
   await d.pointer(up.x, up.y, { steps: 10, ms: 55 }); await d.hold(700); await d.click(2200);
-  // a bullet takes everything under it: click Water, then Shift+Alt+Up
+  // a bullet takes everything under it: click Water, then Alt+Up
   const w = await d.textEnd('.cm-line', 'Water');
   await d.pointer(w.x, w.y, { steps: 16, ms: 50 }); await d.hold(500);
   await d.page.mouse.down(); await d.page.mouse.up(); await sleep(250); await d.caret(); await d.snap(500);
   await d.pointer(w.x + 70, w.y + 60, { steps: 6, ms: 50 }); await d.hold(700); // the pointer steps aside so the caret shows
   const near = c => ({ x: c.x + 56, y: c.y - 34 });
-  let c = await d.caret(); await d.badge('Shift+Alt+↑', near(c)); await d.hold(1300);
-  await d.js(() => app.commands.executeCommandById('heading-reorder:move-section-up')); await sleep(300);
-  c = await d.caret(); await d.badge('Shift+Alt+↑', near(c)); await d.hold(1800); await d.badge(''); await d.hold(1500); await d.caret(false); await d.hold(300);
+  let c = await d.caret(); await d.badge('Alt+↑', near(c)); await d.hold(1300);
+  await d.js(() => app.commands.executeCommandById('heading-reorder:move-block-up')); await sleep(300);
+  c = await d.caret(); await d.badge('Alt+↑', near(c)); await d.hold(1800); await d.badge(''); await d.hold(1500); await d.caret(false); await d.hold(300);
   console.log(await d.gif(`${O}/reorder-${T}.gif`)); await d.close();
 })().catch(e => { console.error(e); process.exit(1); });

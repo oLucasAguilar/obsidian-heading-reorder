@@ -3,11 +3,12 @@
 **Move a heading or a bullet with everything under it.**
 
 - Hover a heading: two arrows in the margin swap it with the section above or below.
-- `Shift+Alt+↑` and `Shift+Alt+↓` do the same for the heading or bullet the cursor is in.
+- `Alt+↑` and `Alt+↓` do the same for the heading or bullet the cursor is in.
+- `Shift+Alt+↑` and `Shift+Alt+↓` move only the line, leaving what is under it in place.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/reorder-dark.gif"><img alt="The arrow next to Bread moves the whole Bread section above Soup; then Shift+Alt+Up moves the Water bullet, with its child, above Flour" src="docs/reorder-light.gif"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/reorder-dark.gif"><img alt="The arrow next to Bread moves the whole Bread section above Soup; then Alt+Up moves the Water bullet, with its child, above Flour" src="docs/reorder-light.gif"></picture>
 
-Obsidian's own `Alt+↑` moves one line and leaves the children behind.
+If you bound `Alt+↑/↓` to Obsidian's "Move line up/down", remove that binding: yours wins over the plugin's.
 
 ## Install
 

@@ -4,6 +4,7 @@ const obsidian = require('obsidian');
 const { Decoration, ViewPlugin, WidgetType } = require('@codemirror/view');
 const { Prec } = require('@codemirror/state');
 const { foldable, foldedRanges, foldEffect, unfoldEffect } = require('@codemirror/language');
+const { moveLineUp, moveLineDown } = require('@codemirror/commands');
 
 /* A fenced block may hold anything, hashes included, and none of it is a
  * heading. Fences are the only thing read here beyond the hashes themselves. */
@@ -412,6 +413,22 @@ function moveItem(view, lineNumber, dir) {
   return true;
 }
 
+/* What alt+arrow does on this line. A heading first: a line is one or the
+ * other, and never both. A heading with no sibling that way stays put rather
+ * than falling through to a line move, which would tear it off its section. A
+ * bullet with no sibling falls through, because Obsidian's own move knows how
+ * to take it out of its parent. */
+function blockMoveAt(text, lineNumber, dir) {
+  const { headings } = parseHeadings(text);
+  const heading = headingIndexAt(headings, lineNumber);
+  if (heading !== -1) return siblingIndex(headings, heading, dir) === null ? 'none' : 'section';
+
+  const { lines, items, fenced } = parseList(text);
+  const item = itemAt(lines, fenced, items, lineNumber);
+  if (item !== -1 && itemSibling(lines, fenced, items, item, dir) !== null) return 'item';
+  return 'native';
+}
+
 function arrowsFor(headings, index) {
   return { up: siblingIndex(headings, index, -1) !== null, down: siblingIndex(headings, index, 1) !== null };
 }
@@ -544,43 +561,50 @@ class HeadingReorderPlugin extends obsidian.Plugin {
     this.registerEditorExtension(Prec.highest(makeViewPlugin(this)));
     this.addSettingTab(new HeadingReorderSettingTab(this.app, this));
 
+    /* One rule for headings and bullets alike: alt moves the block with
+     * everything under it, shift+alt moves the line alone.
+     *
+     * Alt+arrow is free out of the box: the window manager has nothing on it,
+     * Obsidian strips it out of CodeMirror's default keymap, and its own "Move
+     * line up/down" ships with no key. A key the user saved for those commands
+     * wins over a plugin default, though, so whoever bound alt to them has to
+     * take it off. Not ctrl+alt, which never arrives: GNOME takes ctrl+alt+arrow
+     * for switching workspace. */
     for (const dir of [-1, 1]) {
+      const way = dir === -1 ? 'up' : 'down';
+      const key = dir === -1 ? 'ArrowUp' : 'ArrowDown';
+
       this.addCommand({
-        id: dir === -1 ? 'move-section-up' : 'move-section-down',
-        name:
-          dir === -1
-            ? 'Swap this section or list item with the one above'
-            : 'Swap this section or list item with the one below',
-        /* The same move the arrows make, from the heading the cursor is on, and
-         * the same move on a bullet, from the item the cursor is in. Out of the
-         * way everywhere else: on neither of those the check says no and the key
-         * goes to whoever else wants it.
-         *
-         * Not ctrl+alt, which never arrives: GNOME takes ctrl+alt+arrow for
-         * switching workspace and the app never sees the key. Shift+alt+arrow is
-         * free three ways over: the window manager has nothing on it, Obsidian
-         * strips it out of CodeMirror's default keymap, and no command claims
-         * it. */
-        hotkeys: [{ modifiers: ['Shift', 'Alt'], key: dir === -1 ? 'ArrowUp' : 'ArrowDown' }],
+        id: `move-block-${way}`,
+        name: `Move the section or list item ${way}, with everything under it`,
+        hotkeys: [{ modifiers: ['Alt'], key }],
         editorCheckCallback: (checking, editor) => {
           const cm = editor && editor.cm;
           if (!cm) return false;
           const line = editor.getCursor().line + 1;
-          const text = cm.state.doc.toString();
+          const move = blockMoveAt(cm.state.doc.toString(), line, dir);
+          if (move === 'none') return false;
+          if (checking) return true;
+          if (move === 'section') moveSection(cm, line, dir);
+          else if (move === 'item') moveItem(cm, line, dir);
+          // a plain line, or a bullet stepping out of its parent: Obsidian's own
+          // move handles both, and the plugin has nothing to add there
+          else editor.exec(dir === -1 ? 'swapLineUp' : 'swapLineDown');
+          return true;
+        },
+      });
 
-          // a heading first: a line is one or the other, and never both
-          const { headings } = parseHeadings(text);
-          const heading = headingIndexAt(headings, line);
-          if (heading !== -1) {
-            if (siblingIndex(headings, heading, dir) === null) return false;
-            if (!checking) moveSection(cm, line, dir);
-            return true;
-          }
-
-          const { lines, items, fenced } = parseList(text);
-          const item = itemAt(lines, fenced, items, line);
-          if (item === -1 || itemSibling(lines, fenced, items, item, dir) === null) return false;
-          if (!checking) moveItem(cm, line, dir);
+      this.addCommand({
+        id: `move-line-${way}`,
+        name: `Move only this line ${way}`,
+        hotkeys: [{ modifiers: ['Shift', 'Alt'], key }],
+        /* Obsidian's own line move takes a bullet's children along since 1.15,
+         * which left no way to move just the one line. CodeMirror's still does
+         * exactly that, on a heading as much as on a bullet. */
+        editorCheckCallback: (checking, editor) => {
+          const cm = editor && editor.cm;
+          if (!cm) return false;
+          if (!checking) (dir === -1 ? moveLineUp : moveLineDown)(cm);
           return true;
         },
       });
@@ -625,6 +649,7 @@ class HeadingReorderSettingTab extends obsidian.PluginSettingTab {
 
 module.exports = HeadingReorderPlugin;
 module.exports.__test = {
+  blockMoveAt,
   parseHeadings,
   sectionEnd,
   siblingIndex,

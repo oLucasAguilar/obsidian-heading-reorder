@@ -19,6 +19,7 @@ const fakeObsidian = {
 };
 const fakeView = { Decoration: Fake, ViewPlugin: Fake, WidgetType: Fake };
 const fakeState = { Prec: Fake };
+const fakeCommands = { moveLineUp: () => true, moveLineDown: () => true };
 const fakeLanguage = { foldable: () => null, foldedRanges: () => ({ iter: () => ({ value: null }) }), foldEffect: Fake, unfoldEffect: Fake };
 
 const origLoad = Module._load;
@@ -27,6 +28,7 @@ Module._load = function (request) {
   if (request === '@codemirror/view') return fakeView;
   if (request === '@codemirror/state') return fakeState;
   if (request === '@codemirror/language') return fakeLanguage;
+  if (request === '@codemirror/commands') return fakeCommands;
   return origLoad.apply(this, arguments);
 };
 
@@ -345,6 +347,30 @@ check('the bullet that came up is folded at its new line',
   t.movedFoldLines(downList, [4]), [1]); // '- water' comes up to the top
 check('a fold outside the two bullets is left alone',
   t.movedFoldLines(downList, [6]), []);
+
+/* ---- what alt+arrow does on each kind of line ---- */
+const mixed = [
+  '## Bread',     // 1
+  '- flour',      // 2
+  '  - rye',      // 3
+  '- water',      // 4
+  'plain text',   // 5
+  '## Cake',      // 6
+].join('\n');
+check('a heading with a sibling below moves its section',
+  t.blockMoveAt(mixed, 1, 1), 'section');
+check('a heading with no sibling that way stays put',
+  t.blockMoveAt(mixed, 1, -1), 'none');
+check('a bullet with a sibling moves with its children',
+  t.blockMoveAt(mixed, 2, 1), 'item');
+check('a bullet with no sibling that way goes to Obsidian',
+  t.blockMoveAt(mixed, 2, -1), 'native');
+check('a child with no sibling goes to Obsidian, which can take it out',
+  t.blockMoveAt(mixed, 3, 1), 'native');
+check('a plain line goes to Obsidian',
+  t.blockMoveAt(mixed, 5, -1), 'native');
+check('alt is the block move and shift+alt the line move',
+  /move-block-[\s\S]*modifiers: \['Alt'\][\s\S]*move-line-[\s\S]*modifiers: \['Shift', 'Alt'\]/.test(source), true);
 
 /* ---- what the editor is asked to do ---- */
 check('the swap is one rewrite of the lines the two cover',

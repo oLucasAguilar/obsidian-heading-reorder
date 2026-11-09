@@ -4,7 +4,7 @@ const obsidian = require('obsidian');
 const { Decoration, ViewPlugin, WidgetType } = require('@codemirror/view');
 const { Prec } = require('@codemirror/state');
 const { foldable, foldedRanges, foldEffect, unfoldEffect } = require('@codemirror/language');
-const { moveLineUp, moveLineDown } = require('@codemirror/commands');
+const { moveLineUp, moveLineDown, indentMore } = require('@codemirror/commands');
 
 /* A fenced block may hold anything, hashes included, and none of it is a
  * heading. Fences are the only thing read here beyond the hashes themselves. */
@@ -418,6 +418,37 @@ function moveItem(view, lineNumber, dir) {
  * than falling through to a line move, which would tear it off its section. A
  * bullet with no sibling falls through, because Obsidian's own move knows how
  * to take it out of its parent. */
+/* An indented bullet with no list above it: right under a heading, a
+ * paragraph or the top of the note. Markdown reads that as an indented code
+ * block, so Obsidian's Shift+Tab takes it for code and unindents the one line,
+ * leaving the children behind. This is the bullet Tab put there with its
+ * children, so here they come back out with it.
+ *
+ * Returns the edits, one per line that loses a level, or null when the line
+ * sits in a real list and Obsidian's own unindent is the right one. */
+function orphanUnindent(text, lineIndex) {
+  const { lines, fenced } = parseList(text);
+  const line = lines[lineIndex];
+  if (line === undefined || fenced[lineIndex]) return null;
+  if (!ITEM.test(line) || indentWidth(line) === 0) return null;
+  for (let i = lineIndex - 1; i >= 0; i--) {
+    if (lines[i].trim() === '') continue;
+    if (fenced[i]) break;
+    if (ITEM.test(lines[i])) return null;
+    if (indentWidth(lines[i]) === 0) break;
+  }
+  const indent = indentWidth(line);
+  const edits = [];
+  for (let i = lineIndex; i < lines.length; i++) {
+    const text = lines[i];
+    if (i > lineIndex && !fenced[i] && text.trim() !== '' && indentWidth(text) <= indent) break;
+    if (text.trim() === '') continue;
+    const remove = text[0] === '\t' ? 1 : Math.min(4, text.match(/^ */)[0].length);
+    if (remove > 0) edits.push({ line: i, remove });
+  }
+  return edits;
+}
+
 function blockMoveAt(text, lineNumber, dir) {
   const { headings } = parseHeadings(text);
   const heading = headingIndexAt(headings, lineNumber);
@@ -553,6 +584,29 @@ const DEFAULT_SETTINGS = {
   alwaysShow: false,
 };
 
+/* The edits for the cursor's line, or null. Only a single cursor on a single
+ * line: a selection across lines goes to Obsidian as it always did. */
+function orphanEdits(cm) {
+  const { state } = cm;
+  if (state.selection.ranges.length !== 1) return null;
+  const { from, to } = state.selection.main;
+  const line = state.doc.lineAt(from);
+  if (state.doc.lineAt(to).number !== line.number) return null;
+  return orphanUnindent(state.doc.toString(), line.number - 1);
+}
+
+function unindentOrphan(cm) {
+  const edits = orphanEdits(cm);
+  if (!edits) return false;
+  const { doc } = cm.state;
+  const changes = edits.map(({ line, remove }) => {
+    const from = doc.line(line + 1).from;
+    return { from, to: from + remove, insert: '' };
+  });
+  cm.dispatch({ changes, userEvent: 'delete.dedent' });
+  return true;
+}
+
 class HeadingReorderPlugin extends obsidian.Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -609,6 +663,51 @@ class HeadingReorderPlugin extends obsidian.Plugin {
         },
       });
     }
+
+    /* Ctrl+Tab and Ctrl+Shift+Tab are Obsidian's "Go to next/previous tab".
+     * Here they indent on a bullet and switch tabs everywhere else.
+     *
+     * Ctrl+Tab indents only the cursor's line: Obsidian's Tab takes a bullet's
+     * children along since 1.15, CodeMirror's indentMore does not.
+     * Ctrl+Shift+Tab is Shift+Tab with ctrl still down, so Ctrl+Tab is undone
+     * without letting go.
+     *
+     * App defaults are matched before plugin ones, and the user's saved keys
+     * before both: the tab commands keep only Ctrl+PageDown/Up in the user's
+     * hotkeys, and the switching comes from here. Never a check that says no:
+     * the key would go on to nobody. */
+    const tabKey = (id, modifiers, onBullet, tabCommand) => this.addCommand({
+      id,
+      name: `${id === 'indent-line' ? 'Indent only this line' : 'Unindent, as Shift+Tab does'} on a bullet, switch tabs elsewhere`,
+      hotkeys: [{ modifiers, key: 'Tab' }],
+      callback: () => {
+        const view = this.app.workspace.getActiveViewOfType(obsidian.MarkdownView);
+        const editor = view && view.editor;
+        if (editor && editor.cm && editor.hasFocus() && ITEM.test(editor.getLine(editor.getCursor().line))) {
+          onBullet(editor);
+        } else {
+          this.app.commands.executeCommandById(tabCommand);
+        }
+      },
+    });
+    tabKey('indent-line', ['Ctrl'], (editor) => indentMore(editor.cm), 'workspace:next-tab');
+    tabKey('unindent', ['Ctrl', 'Shift'], (editor) => {
+      if (!unindentOrphan(editor.cm)) editor.unindentList();
+    }, 'workspace:previous-tab');
+
+    /* Shift+Tab only claims the bullet Obsidian mistakes for code. Anywhere
+     * else the check says no, and the key goes on to Obsidian's own unindent. */
+    this.addCommand({
+      id: 'unindent-first-bullet',
+      name: 'Unindent a first bullet with its children',
+      hotkeys: [{ modifiers: ['Shift'], key: 'Tab' }],
+      editorCheckCallback: (checking, editor) => {
+        const cm = editor && editor.cm;
+        if (!cm) return false;
+        if (checking) return orphanEdits(cm) !== null;
+        return unindentOrphan(cm);
+      },
+    });
   }
 
   onunload() {
@@ -650,6 +749,7 @@ class HeadingReorderSettingTab extends obsidian.PluginSettingTab {
 module.exports = HeadingReorderPlugin;
 module.exports.__test = {
   blockMoveAt,
+  orphanUnindent,
   parseHeadings,
   sectionEnd,
   siblingIndex,

@@ -19,7 +19,7 @@ const fakeObsidian = {
 };
 const fakeView = { Decoration: Fake, ViewPlugin: Fake, WidgetType: Fake };
 const fakeState = { Prec: Fake };
-const fakeCommands = { moveLineUp: () => true, moveLineDown: () => true };
+const fakeCommands = { moveLineUp: () => true, moveLineDown: () => true, indentMore: () => true };
 const fakeLanguage = { foldable: () => null, foldedRanges: () => ({ iter: () => ({ value: null }) }), foldEffect: Fake, unfoldEffect: Fake };
 
 const origLoad = Module._load;
@@ -371,6 +371,31 @@ check('a plain line goes to Obsidian',
   t.blockMoveAt(mixed, 5, -1), 'native');
 check('alt is the block move and shift+alt the line move',
   /move-block-[\s\S]*modifiers: \['Alt'\][\s\S]*move-line-[\s\S]*modifiers: \['Shift', 'Alt'\]/.test(source), true);
+
+/* ---- a first bullet that Markdown reads as code ---- */
+check('an indented first bullet under a heading comes out with its children',
+  t.orphanUnindent('## Recipes\n\t- Bread\n\t\t- Flour\n\t\t- Water\n- Soup', 1),
+  [{ line: 1, remove: 1 }, { line: 2, remove: 1 }, { line: 3, remove: 1 }]);
+check('spaces lose one level of four',
+  t.orphanUnindent('Text\n    - Bread\n        - Flour', 1),
+  [{ line: 1, remove: 4 }, { line: 2, remove: 4 }]);
+check('at the top of the note too',
+  t.orphanUnindent('\t- Bread\n\t\t- Flour', 0), [{ line: 0, remove: 1 }, { line: 1, remove: 1 }]);
+check('a bullet inside a list is left to Obsidian',
+  t.orphanUnindent('## Recipes\n- Bread\n\t- Flour\n\t\t- Rye', 2), null);
+check('a bullet under the text of an item is in a list too',
+  t.orphanUnindent('- Bread\n\tsome note\n\t- Flour', 2), null);
+check('a bullet at the margin has nothing to lose',
+  t.orphanUnindent('## Recipes\n- Bread', 1), null);
+check('a dash inside a fence is code, not a bullet',
+  t.orphanUnindent('```\n\t- Bread\n```', 1), null);
+check('a blank line between the children does not stop them',
+  t.orphanUnindent('## Recipes\n\t- Bread\n\n\t\t- Flour\n- Soup', 1),
+  [{ line: 1, remove: 1 }, { line: 3, remove: 1 }]);
+check('ctrl+tab indents only on a bullet and switches tabs elsewhere',
+  /ITEM\.test\(editor\.getLine[\s\S]*executeCommandById\(tabCommand\)[\s\S]*'indent-line', \['Ctrl'\], \(editor\) => indentMore\(editor\.cm\), 'workspace:next-tab'[\s\S]*'unindent', \['Ctrl', 'Shift'\][\s\S]*!unindentOrphan\(editor\.cm\)\) editor\.unindentList\(\)[\s\S]*'workspace:previous-tab'/.test(source), true);
+check('shift+tab only claims the first bullet',
+  /unindent-first-bullet[\s\S]*modifiers: \['Shift'\], key: 'Tab'[\s\S]*orphanEdits\(cm\) !== null/.test(source), true);
 
 /* ---- what the editor is asked to do ---- */
 check('the swap is one rewrite of the lines the two cover',

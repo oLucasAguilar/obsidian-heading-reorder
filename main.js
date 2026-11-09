@@ -1,7 +1,7 @@
 'use strict';
 
 const obsidian = require('obsidian');
-const { Decoration, ViewPlugin, WidgetType } = require('@codemirror/view');
+const { Decoration, ViewPlugin, WidgetType, keymap } = require('@codemirror/view');
 const { Prec } = require('@codemirror/state');
 const { foldable, foldedRanges, foldEffect, unfoldEffect } = require('@codemirror/language');
 const { moveLineUp, moveLineDown, indentMore } = require('@codemirror/commands');
@@ -695,19 +695,11 @@ class HeadingReorderPlugin extends obsidian.Plugin {
       if (!unindentOrphan(editor.cm)) editor.unindentList();
     }, 'workspace:previous-tab');
 
-    /* Shift+Tab only claims the bullet Obsidian mistakes for code. Anywhere
-     * else the check says no, and the key goes on to Obsidian's own unindent. */
-    this.addCommand({
-      id: 'unindent-first-bullet',
-      name: 'Unindent a first bullet with its children',
-      hotkeys: [{ modifiers: ['Shift'], key: 'Tab' }],
-      editorCheckCallback: (checking, editor) => {
-        const cm = editor && editor.cm;
-        if (!cm) return false;
-        if (checking) return orphanEdits(cm) !== null;
-        return unindentOrphan(cm);
-      },
-    });
+    /* Shift+Tab only claims the bullet Obsidian mistakes for code. It is a
+     * CodeMirror key, not a command: a command's hotkey is run without asking
+     * its check first and the key stops there, so Obsidian's own unindent would
+     * never see it. A keymap entry that returns false passes the key on. */
+    this.registerEditorExtension(Prec.highest(keymap.of([{ key: 'Shift-Tab', run: unindentOrphan }])));
   }
 
   onunload() {

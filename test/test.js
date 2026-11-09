@@ -17,7 +17,7 @@ class Fake {
 const fakeObsidian = {
   Plugin: Fake, PluginSettingTab: Fake, Setting: Fake, Notice: Fake, setIcon: () => {},
 };
-const fakeView = { Decoration: Fake, ViewPlugin: Fake, WidgetType: Fake };
+const fakeView = { Decoration: Fake, ViewPlugin: Fake, WidgetType: Fake, keymap: Fake };
 const fakeState = { Prec: Fake };
 const fakeCommands = { moveLineUp: () => true, moveLineDown: () => true, indentMore: () => true };
 const fakeLanguage = { foldable: () => null, foldedRanges: () => ({ iter: () => ({ value: null }) }), foldEffect: Fake, unfoldEffect: Fake };
@@ -394,8 +394,8 @@ check('a blank line between the children does not stop them',
   [{ line: 1, remove: 1 }, { line: 3, remove: 1 }]);
 check('ctrl+tab indents only on a bullet and switches tabs elsewhere',
   /ITEM\.test\(editor\.getLine[\s\S]*executeCommandById\(tabCommand\)[\s\S]*'indent-line', \['Ctrl'\], \(editor\) => indentMore\(editor\.cm\), 'workspace:next-tab'[\s\S]*'unindent', \['Ctrl', 'Shift'\][\s\S]*!unindentOrphan\(editor\.cm\)\) editor\.unindentList\(\)[\s\S]*'workspace:previous-tab'/.test(source), true);
-check('shift+tab only claims the first bullet',
-  /unindent-first-bullet[\s\S]*modifiers: \['Shift'\], key: 'Tab'[\s\S]*orphanEdits\(cm\) !== null/.test(source), true);
+check('shift+tab is a CodeMirror key that passes on, not a command hotkey',
+  /keymap\.of\(\[\{ key: 'Shift-Tab', run: unindentOrphan \}\]\)/.test(source) && !/modifiers: \['Shift'\], key: 'Tab'/.test(source), true);
 
 /* ---- what the editor is asked to do ---- */
 check('the swap is one rewrite of the lines the two cover',
